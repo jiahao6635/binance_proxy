@@ -106,7 +106,7 @@ async fn main() -> std::io::Result<()> {
                 data.get_binance_api_data(path, query.into_inner()).await
             }))
     })
-        .bind("127.0.0.1:443")?
+        .bind("0.0.0.0:443")?
         .run()
         .await
 }
