@@ -32,19 +32,23 @@ impl BinanceProxyController {
         let final_url = match Self::build_url_with_params(format!("{base_url}{path}"), &all_params) {
             Ok(url) => url,
             Err(err) => {
-                eprintln!("Failed to build URL: {err}");
-                return HttpResponse::BadRequest().body("Invalid parameters provided.");
+                let error_message = format!("Failed to build URL: {}", err);
+                eprintln!("{}", error_message);
+                return HttpResponse::BadRequest().body(error_message);
             }
         };
 
         println!("Requesting Binance API asynchronously: {}", final_url);
 
         // 提交异步任务
-        match self.execute_request(final_url).await {
-            Ok(response_body) => HttpResponse::Ok().body(response_body),
+        match self.execute_request(final_url.clone()).await {
+            Ok(response_body) => HttpResponse::Ok()
+                .append_header(("Final-URL", final_url.clone()))
+                .body(response_body),
             Err(err) => {
-                eprintln!("Error occurred while requesting Binance API: {}", err);
-                HttpResponse::InternalServerError().body("An unexpected error occurred.")
+                let error_message = format!("Error occurred: {}. Final URL: {}", err, final_url);
+                eprintln!("{}", error_message);
+                HttpResponse::InternalServerError().body(error_message)
             }
         }
     }
@@ -60,17 +64,21 @@ impl BinanceProxyController {
                 } else {
                     let status = resp.status();
                     let error_body = resp.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                    eprintln!("Request failed: Status={} Body={}", status, error_body);
-                    Err(format!("Request failed: Status={} Body={}", status, error_body))
+                    let error_message = format!(
+                        "Request failed: Status={} Body={}",
+                        status, error_body
+                    );
+                    eprintln!("{}", error_message);
+                    Err(error_message)
                 }
             }
             Err(e) => {
-                eprintln!("Error occurred while requesting Binance API: {}", e);
-                Err(format!("Error occurred while requesting Binance API: {}", e))
+                let error_message = format!("Error occurred while requesting Binance API: {}", e);
+                eprintln!("{}", error_message);
+                Err(error_message)
             }
         }
     }
-
 
     /// 构建带查询参数的 URL
     fn build_url_with_params(
@@ -101,10 +109,15 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(controller.clone())
-            .route("/proxy", web::to(|data: web::Data<BinanceProxyController>, query: web::Query<HashMap<String, String>>| async move {
-                let path = query.get("path").unwrap_or(&"".to_string()).clone();
-                data.get_binance_api_data(path, query.into_inner()).await
-            }))
+            .route(
+                "/proxy",
+                web::to(
+                    |data: web::Data<BinanceProxyController>, query: web::Query<HashMap<String, String>>| async move {
+                        let path = query.get("path").unwrap_or(&"".to_string()).clone();
+                        data.get_binance_api_data(path, query.into_inner()).await
+                    },
+                ),
+            )
     })
         .bind("0.0.0.0:443")?
         .run()
